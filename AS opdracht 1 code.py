@@ -2,37 +2,40 @@ import random
 from dataclasses import dataclass
 import numpy as np
 
+"""A script showcasing a MDP (Markov Decision Process), contains a State dataclass,
+Maze class, Agent class, and a Policy class. The Agent contains an instance of the Maze
+and Policy, and a Maze contains a grid of States. Each state contains a reward, and a 
+value starting at 0. These will be used by the agent to perform value iteration on the
+Maze. This Maze is a non-deterministic environment which each chosen action having a 30% chance
+of failing."""
+
 
 @dataclass
 class State:
     """A state, used in the grid of the Maze class to store all information of each square."""
     x: int
     y: int
-    reward: int
-    value: int
-    next_value: int  # for value iteration
+    reward: float
+    value: float
+    next_value: float  # for value iteration
     is_end: bool
 
 
 class Maze:
     """The maze, the environment of the agent. Contains a grid with states and coordinates, and a function that lets
     the agent do a step within the maze."""
-    def __init__(self):
-        self.finish_locations = [(0, 0), (3, 3)]
+    def __init__(self, grid_size: int):
         self.grid = {}
-        self.grid_size = 4
+        self.grid_size = grid_size
         for y in range(self.grid_size):
             for x in range(self.grid_size):
-                if (x, y) == (3, 0):
-                    self.grid[x, y] = State(x=x, y=y, reward=40, value=0, next_value=0, is_end=True)
-                elif (x, y) == (0, 3):
-                    self.grid[x, y] = State(x=x, y=y, reward=10, value=0, next_value=0, is_end=True)
-                elif (x, y) == (1, 3):
-                    self.grid[x, y] = State(x=x, y=y, reward=-2, value=0, next_value=0, is_end=False)
-                elif (x, y) in [(2, 1), (3, 1)]:
-                    self.grid[x, y] = State(x=x, y=y, reward=-10, value=0, next_value=0, is_end=False)
-                else:
-                    self.grid[x, y] = State(x=x, y=y, reward=-1, value=0, next_value=0, is_end=False)  # reward of location
+                self.grid[x, y] = State(x=x, y=y, reward=-1, value=0, next_value=0, is_end=False)
+
+        self.grid[(3, 0)] = State(x=3, y=0, reward=40, value=0, next_value=0, is_end=True)  # changed reward and is_end
+        self.grid[(0, 3)] = State(x=0, y=3, reward=10, value=0, next_value=0, is_end=True)  # changed reward and is_end
+        self.grid[(1, 3)].reward = -2
+        self.grid[(2, 1)].reward = -10
+        self.grid[(3, 1)].reward = -10
 
     def step(self, current_state: State, direction: tuple) -> State:
         """
@@ -81,31 +84,33 @@ class Agent:
     Has a function to do value iteration on the maze, a function to get the neighbours of a given state,
     and a function that does an action for the agent using its policy.
     """
-    def __init__(self):
-        self.maze = Maze()
-        self.current_state = self.maze.grid[(1, 3)]  # starts at (1, 3)
+    def __init__(self, grid_size: int, discount: float, start_location: tuple):
+        self.grid_size = grid_size
+        self.maze = Maze(self.grid_size)
+        self.current_state = self.maze.grid[start_location]  # starts at (1, 3)
         self.directions = [(0, -1), (0, 1),
                            (-1, 0), (1, 0)]  # What is added or removed to a coord to simulate a direction
-        self.discount = 1
-        self.policy = Policy()
+        self.discount = discount
+        self.policy = Policy(self.grid_size, self.discount)
         self.is_done = self.current_state.is_end
 
     def value_iteration(self):
         """
         Value iteration of the model. For each state in the grid it calculates the
         value by taking each neighbours reward and value, and using them to for the
-        value function. It has a probability of its chosen next state to succeed with
+        value function. Due to the environment being a non-deterministic environment
+        it has a probability of its chosen next state to succeed with
         0.7 chance. Each other probability has an equal 0.1 chance each.
 
         So for each possible direction it uses the following value function:
         0.7 * (wanted next state + discount * value next state) +
         0.1 * (unwanted next state + discount * value next state) +
         0.1 * (unwanted next state + discount * value next state) +
-        0.1 * (unwanted next state + discount * value next state) +
+        0.1 * (unwanted next state + discount * value next state)
 
         Repeat for each direction.
         """
-        delta = float("inf")
+        delta = float("inf")  # to enter the while loop
         k = 0
         print("k = {}".format(k))
         print(self.maze)
@@ -120,10 +125,10 @@ class Agent:
                     for direction in self.directions:
                         wrong_directions = list(self.directions)
                         wrong_directions.remove(direction)
-                        neighbour_state = self.get_neigbour_state(direction, i)  # get state of neighbouring squares
+                        neighbour_state = self.get_neighbour_state(direction, i)  # get state of neighbouring squares
                         value_func = 0.7 * (neighbour_state.reward + (self.discount * neighbour_state.value))
                         for wrong_direction in wrong_directions:
-                            neighbour_state = self.get_neigbour_state(wrong_direction, i)  # get state of neighbouring squares
+                            neighbour_state = self.get_neighbour_state(wrong_direction, i)  # get state of neighbouring squares
                             value_func += 0.1 * (neighbour_state.reward + (self.discount * neighbour_state.value))
                         value_func_neighbours.append(value_func)
 
@@ -142,7 +147,7 @@ class Agent:
             print("k = {}".format(k))
             print(self.maze)
 
-    def get_neigbour_state(self, coord_addition: tuple, home_coord: tuple) -> State:
+    def get_neighbour_state(self, coord_addition: tuple, home_coord: tuple) -> State:
         """
             Gives the neighbour state of a given state. Gets a tuple to add to its home coordinates, and clips it
             back to >0 and <4 to make sure the coordinates cannot go out of bounds.
@@ -155,7 +160,7 @@ class Agent:
              One state next to the state on home_coord
         """
         neighbour_coords = np.array(coord_addition) + np.array(home_coord)  # add home coords with 1
-        neighbour_coords = tuple(np.clip(neighbour_coords, 0, 3))  # if out of bounds: revert to home coords
+        neighbour_coords = tuple(np.clip(neighbour_coords, 0, self.grid_size - 1))  # if out of bounds: revert to home coords
         return self.maze.grid[neighbour_coords]
 
     def do_action(self):
@@ -172,10 +177,11 @@ class Agent:
 
 class Policy:
     """The policy of the agent."""
-    def __init__(self):
+    def __init__(self, grid_size: int, discount: float):
+        self.grid_size = grid_size
         self.directions = [(0, -1), (0, 1),
                            (-1, 0), (1, 0)]  # What is added or removed to a coord to simulate a direction
-        self.discount = 1
+        self.discount = discount
 
     def select_action(self, grid: dict, current_state: State) -> list:
         """
@@ -199,7 +205,7 @@ class Policy:
         for direction in self.directions:
             # Get value of each neighbour
             neighbour_coords = np.array(direction) + np.array(home_coords)  # add home coords with 1
-            neighbour_coords = tuple(np.clip(neighbour_coords, 0, 3))  # if out of bounds: revert to home coords
+            neighbour_coords = tuple(np.clip(neighbour_coords, 0, self.grid_size - 1))  # if out of bounds: revert to home coords
             neighbour_state = grid[neighbour_coords]
             value_func = neighbour_state.reward + (self.discount * neighbour_state.value)
             values.append(value_func)
@@ -212,16 +218,16 @@ class Policy:
 
     def print_policy(self, grid: dict):
         """
-        Prints out the entire grid and its policy, with each square showing all the best directions
-        to go to from that square.
+            Prints out the entire grid and its policy, with each square showing all the best directions
+            to go to from that square.
         Parameters
         ----------
             gird (dictionary): The grid of the Maze class containing all the states
         """
         direction_arrows = ["↑", "↓", "←", "→"]
         print_str = "\033[93mPolicy: \033[35m\n"
-        for y in range(4):
-            for x in range(4):
+        for y in range(self.grid_size):
+            for x in range(self.grid_size):
                 if grid[(x, y)].is_end is False:
                     directions = self.select_action(grid, grid[(x, y)])
                     indices = [index for index, value in enumerate(self.directions) if value in directions]
@@ -234,7 +240,7 @@ class Policy:
 
 
 if __name__ == "__main__":
-    agent = Agent()
+    agent = Agent(grid_size=4, discount=1, start_location=(1, 3))
 
     print("\033[35mValue iteration start:")
     agent.value_iteration()
